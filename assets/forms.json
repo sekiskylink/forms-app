@@ -1,0 +1,23 @@
+{
+  "CASES": [
+    {
+      "title": "Patient Information",
+      "layout": "grid",
+      "columns": 3,
+      "fields": [
+        { "label": "Patient Name", "type": "text", "validation": { "required": true } },
+        { "label": "Age", "type": "number" },
+        { "label": "Gender", "type": "select", "options": ["Male", "Female", "Other"] },
+        { "label": "Date of Birth", "type": "date" }
+      ]
+    },
+    {
+      "title": "Clinical Data",
+      "layout": "stack",
+      "fields": [
+        { "label": "Symptoms", "type": "multiline" },
+        { "label": "Consent Given", "type": "boolean", "validation": { "required": true } }
+      ]
+    }
+  ]
+}
