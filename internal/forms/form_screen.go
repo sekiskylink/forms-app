@@ -2,16 +2,39 @@ package forms
 
 import (
 	"fmt"
+	"image/color"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"github.com/Knetic/govaluate"
 )
+
+// highlightField draws a thin red border around an input field
+func highlightField(obj fyne.CanvasObject, errMsg string, errLbl *widget.Label) fyne.CanvasObject {
+	rect := canvas.NewRectangle(theme.ErrorColor())
+	rect.StrokeWidth = 2
+	rect.FillColor = color.NRGBA{0, 0, 0, 0} // transparent fill
+	rect.SetMinSize(obj.MinSize())
+
+	errLbl.SetText("⚠ " + errMsg)
+	errLbl.Show()
+
+	overlay := container.NewStack(obj, rect)
+	return container.NewVBox(overlay, errLbl)
+}
+
+// clearHighlight hides an error label and removes the border
+func clearHighlight(errLbl *widget.Label) {
+	errLbl.Hide()
+}
 
 func makeAdaptiveGrid(w fyne.Window, items []fyne.CanvasObject) fyne.CanvasObject {
 	width := w.Canvas().Size().Width
@@ -34,10 +57,11 @@ func BuildForm(a fyne.App, formName string, sections []Section, onSubmit func(da
 	allSelect := make(map[string]*widget.Select)
 	allDate := make(map[string]*widget.DateEntry)
 	allBool := make(map[string]*widget.Check)
+	errorLabels := make(map[string]*widget.Label)
+	overlayRects := make(map[string]*canvas.Rectangle)
 
 	buildSectionContent := func(sec Section) fyne.CanvasObject {
 		var items []fyne.CanvasObject
-
 		for _, f := range sec.Fields {
 			var field fyne.CanvasObject
 
@@ -61,45 +85,93 @@ func BuildForm(a fyne.App, formName string, sections []Section, onSubmit func(da
 						}
 					}
 				}
-				field = container.NewVBox(widget.NewLabel(f.Label), e)
-				allText[f.Label] = e
+				if f.Validation.MaxLength > 0 {
+					maxLen := f.Validation.MaxLength
+					oldHandler := e.OnChanged
+					e.OnChanged = func(text string) {
+						if oldHandler != nil {
+							oldHandler(text)
+						}
+						if len(e.Text) > maxLen {
+							e.SetText(e.Text[:maxLen])
+						}
+					}
+				}
+
+				errLbl := widget.NewLabel("")
+				errLbl.TextStyle = fyne.TextStyle{Italic: true}
+				errLbl.Hide()
+				errorLabels[f.ID] = errLbl
+
+				content := container.NewVBox(widget.NewLabel(f.Label), e, errLbl)
+
+				overlay := canvas.NewRectangle(color.NRGBA{255, 0, 0, 40})
+				overlay.Hide()
+				overlayRects[f.ID] = overlay
+
+				field = container.NewStack(content, overlay)
+				allText[f.ID] = e
 
 			case "select":
 				s := widget.NewSelect(f.Options, func(string) {})
 				s.PlaceHolder = "Select..."
-				field = container.NewVBox(widget.NewLabel(f.Label), s)
-				allSelect[f.Label] = s
+				errLbl := widget.NewLabel("")
+				errLbl.TextStyle = fyne.TextStyle{Italic: true}
+				errLbl.Hide()
+				errorLabels[f.ID] = errLbl
+				content := container.NewVBox(widget.NewLabel(f.Label), s, errLbl)
+
+				overlay := canvas.NewRectangle(color.NRGBA{255, 0, 0, 40})
+				overlay.Hide()
+				overlayRects[f.ID] = overlay
+
+				field = container.NewStack(content, overlay)
+				allSelect[f.ID] = s
 
 			case "date":
 				d := widget.NewDateEntry()
-				field = container.NewVBox(widget.NewLabel(f.Label), d)
-				allDate[f.Label] = d
+				errLbl := widget.NewLabel("")
+				errLbl.TextStyle = fyne.TextStyle{Italic: true}
+				errLbl.Hide()
+				errorLabels[f.ID] = errLbl
+				content := container.NewVBox(widget.NewLabel(f.Label), d, errLbl)
+
+				overlay := canvas.NewRectangle(color.NRGBA{255, 0, 0, 40})
+				overlay.Hide()
+				overlayRects[f.ID] = overlay
+
+				field = container.NewStack(content, overlay)
+				allDate[f.ID] = d
 
 			case "boolean":
 				c := widget.NewCheck(f.Label, func(bool) {})
-				field = c
-				allBool[f.Label] = c
+				errLbl := widget.NewLabel("")
+				errLbl.TextStyle = fyne.TextStyle{Italic: true}
+				errLbl.Hide()
+				errorLabels[f.ID] = errLbl
+				content := container.NewVBox(c, errLbl)
+
+				overlay := canvas.NewRectangle(color.NRGBA{255, 0, 0, 40})
+				overlay.Hide()
+				overlayRects[f.ID] = overlay
+
+				field = container.NewStack(content, overlay)
+				allBool[f.ID] = c
 			}
 
 			items = append(items, field)
 		}
 
-		layout := strings.ToLower(sec.Layout)
-		switch layout {
-		case "grid":
-			// Use adaptive or fixed columns
+		if strings.ToLower(sec.Layout) == "grid" {
 			if sec.Columns > 0 {
 				return container.NewGridWithColumns(sec.Columns, items...)
 			}
-			// Fallback to our manual adaptive grid
-			return makeAdaptiveGrid(a.Driver().AllWindows()[0], items) // responsive 1–3 cols
-		default:
-			return container.NewVBox(items...)
+			return makeAdaptiveGrid(a.Driver().AllWindows()[0], items)
 		}
+		return container.NewVBox(items...)
 	}
 
 	var formContent fyne.CanvasObject
-
 	if len(sections) == 1 {
 		formContent = buildSectionContent(sections[0])
 	} else {
@@ -112,6 +184,15 @@ func BuildForm(a fyne.App, formName string, sections []Section, onSubmit func(da
 	}
 
 	submit := widget.NewButton("Submit", func() {
+		// clear previous errors
+		for id, lbl := range errorLabels {
+			lbl.Hide()
+			if r, ok := overlayRects[id]; ok {
+				r.Hide()
+				canvas.Refresh(r)
+			}
+		}
+
 		data := map[string]string{}
 		for k, v := range allText {
 			data[k] = v.Text
@@ -128,18 +209,34 @@ func BuildForm(a fyne.App, formName string, sections []Section, onSubmit func(da
 			data[k] = strconv.FormatBool(v.Checked)
 		}
 
-		// Gather fields for validation
 		var allFields []Field
 		for _, sec := range sections {
 			allFields = append(allFields, sec.Fields...)
 		}
 
-		if err := validateForm(allFields, allText, allSelect, allDate, allBool); err != nil {
-			dialog.ShowInformation("Validation Error", err.Error(), a.Driver().AllWindows()[0])
+		fieldErrs, err := validateForm(allFields, allText, allSelect, allDate, allBool)
+		if err != nil && len(fieldErrs) > 0 {
+			for id, msg := range fieldErrs {
+				if lbl, ok := errorLabels[id]; ok {
+					lbl.SetText("⚠ " + msg)
+					lbl.Show()
+				}
+				if r, ok := overlayRects[id]; ok {
+					r.Show()
+					canvas.Refresh(r)
+				}
+			}
+			dialog.ShowError(fmt.Errorf("Please correct the highlighted fields."), a.Driver().AllWindows()[0])
 			return
 		}
 
-		onSubmit(data)
+		go func() {
+			time.Sleep(800 * time.Millisecond)
+			fyne.Do(func() {
+				dialog.ShowInformation("✅ Success", "Form submitted successfully!", a.Driver().AllWindows()[0])
+				onSubmit(data)
+			})
+		}()
 	})
 
 	return container.NewBorder(
@@ -161,85 +258,242 @@ func validateForm(
 	selectEntries map[string]*widget.Select,
 	dateEntries map[string]*widget.DateEntry,
 	boolEntries map[string]*widget.Check,
-) error {
+) (map[string]string, error) {
+	fieldErrors := make(map[string]string)
+	values := make(map[string]string)
+
+	// Build a map of all values for cross-field access
+	for _, f := range fields {
+		if e, ok := textEntries[f.ID]; ok {
+			values[f.ID] = e.Text
+		} else if s, ok := selectEntries[f.ID]; ok {
+			values[f.ID] = s.Selected
+		} else if d, ok := dateEntries[f.ID]; ok && d.Date != nil {
+			values[f.ID] = d.Date.Format("2006-01-02")
+		} else if c, ok := boolEntries[f.ID]; ok {
+			values[f.ID] = strconv.FormatBool(c.Checked)
+		}
+	}
+
 	for _, f := range fields {
 		v := f.Validation
-		var val string
+		val := values[f.ID]
 
-		// pick correct value
-		if e, ok := textEntries[f.Label]; ok {
-			val = e.Text
-		} else if s, ok := selectEntries[f.Label]; ok {
-			val = s.Selected
-		} else if d, ok := dateEntries[f.Label]; ok && d.Date != nil {
-			val = d.Date.Format("2006-01-02")
-		} else if c, ok := boolEntries[f.Label]; ok {
-			val = strconv.FormatBool(c.Checked)
-		}
-
-		// Required validation
+		// ---------- Required ----------
 		if v.Required {
 			switch f.Type {
 			case "boolean":
 				if val == "false" {
-					return fmt.Errorf("'%s' must be checked to proceed", f.Label)
+					fieldErrors[f.ID] = fmt.Sprintf("'%s' must be checked to proceed", f.Label)
 				}
 			default:
 				if val == "" {
-					return fmt.Errorf("'%s' is required", f.Label)
+					fieldErrors[f.ID] = fmt.Sprintf("'%s' is required", f.Label)
 				}
 			}
 		}
 
-		// Text length
+		// ---------- Length validation ----------
 		if v.MinLength > 0 && len(val) < v.MinLength {
-			return fmt.Errorf("'%s' must be at least %d characters", f.Label, v.MinLength)
+			fieldErrors[f.ID] = fmt.Sprintf("'%s' must be at least %d characters", f.Label, v.MinLength)
 		}
 		if v.MaxLength > 0 && len(val) > v.MaxLength {
-			return fmt.Errorf("'%s' must be no more than %d characters", f.Label, v.MaxLength)
+			fieldErrors[f.ID] = fmt.Sprintf("'%s' must be no more than %d characters", f.Label, v.MaxLength)
 		}
 
-		// Numeric
+		// ---------- Numeric range ----------
 		if f.Type == "number" && val != "" {
 			num, err := strconv.ParseFloat(val, 64)
 			if err != nil {
-				return fmt.Errorf("'%s' must be numeric", f.Label)
-			}
-			if v.Min != 0 && num < v.Min {
-				return fmt.Errorf("'%s' must be ≥ %.2f", f.Label, v.Min)
-			}
-			if v.Max != 0 && num > v.Max {
-				return fmt.Errorf("'%s' must be ≤ %.2f", f.Label, v.Max)
+				fieldErrors[f.ID] = fmt.Sprintf("'%s' must be numeric", f.Label)
+			} else {
+				if v.Min != 0 && num < v.Min {
+					fieldErrors[f.ID] = fmt.Sprintf("'%s' must be ≥ %.2f", f.Label, v.Min)
+				}
+				if v.Max != 0 && num > v.Max {
+					fieldErrors[f.ID] = fmt.Sprintf("'%s' must be ≤ %.2f", f.Label, v.Max)
+				}
 			}
 		}
 
-		// Regex pattern
+		// ---------- Regex ----------
 		if v.Pattern != "" && val != "" {
 			re, err := regexp.Compile(v.Pattern)
 			if err == nil && !re.MatchString(val) {
-				return fmt.Errorf("'%s' does not match expected format", f.Label)
+				fieldErrors[f.ID] = fmt.Sprintf("'%s' does not match expected format", f.Label)
 			}
 		}
 
-		// Date validation
+		// ---------- Date range ----------
 		if f.Type == "date" && val != "" {
 			dateVal, err := time.Parse("2006-01-02", val)
 			if err != nil {
-				return fmt.Errorf("'%s' is not a valid date", f.Label)
-			}
-			if v.MinDate != "" {
-				minDate, _ := time.Parse("2006-01-02", v.MinDate)
-				if dateVal.Before(minDate) {
-					return fmt.Errorf("'%s' must be after %s", f.Label, v.MinDate)
+				fieldErrors[f.ID] = fmt.Sprintf("'%s' is not a valid date", f.Label)
+			} else {
+				if v.MinDate != "" {
+					minDate, _ := time.Parse("2006-01-02", v.MinDate)
+					if dateVal.Before(minDate) {
+						fieldErrors[f.ID] = fmt.Sprintf("'%s' must be after %s", f.Label, v.MinDate)
+					}
+				}
+				if v.MaxDate != "" {
+					maxDate, _ := time.Parse("2006-01-02", v.MaxDate)
+					if dateVal.After(maxDate) {
+						fieldErrors[f.ID] = fmt.Sprintf("'%s' must be before %s", f.Label, v.MaxDate)
+					}
 				}
 			}
-			if v.MaxDate != "" {
-				maxDate, _ := time.Parse("2006-01-02", v.MaxDate)
-				if dateVal.After(maxDate) {
-					return fmt.Errorf("'%s' must be before %s", f.Label, v.MaxDate)
+		}
+
+		// ---------- Cross-field numeric/date checks ----------
+		if v.GreaterThanField != "" {
+			otherVal, ok := values[v.GreaterThanField]
+			if ok && otherVal != "" && val != "" {
+				if f.Type == "number" {
+					numA, _ := strconv.ParseFloat(val, 64)
+					numB, _ := strconv.ParseFloat(otherVal, 64)
+					if numA <= numB {
+						fieldErrors[f.ID] = fmt.Sprintf("'%s' must be greater than '%s'", f.Label, v.GreaterThanField)
+					}
+				} else if f.Type == "date" {
+					dateA, _ := time.Parse("2006-01-02", val)
+					dateB, _ := time.Parse("2006-01-02", otherVal)
+					if !dateA.After(dateB) {
+						fieldErrors[f.ID] = fmt.Sprintf("'%s' must be after '%s'", f.Label, v.GreaterThanField)
+					}
+				}
+			}
+		}
+
+		if v.LessThanField != "" {
+			otherVal, ok := values[v.LessThanField]
+			if ok && otherVal != "" && val != "" {
+				if f.Type == "number" {
+					numA, _ := strconv.ParseFloat(val, 64)
+					numB, _ := strconv.ParseFloat(otherVal, 64)
+					if numA >= numB {
+						fieldErrors[f.ID] = fmt.Sprintf("'%s' must be less than '%s'", f.Label, v.LessThanField)
+					}
+				} else if f.Type == "date" {
+					dateA, _ := time.Parse("2006-01-02", val)
+					dateB, _ := time.Parse("2006-01-02", otherVal)
+					if !dateA.Before(dateB) {
+						fieldErrors[f.ID] = fmt.Sprintf("'%s' must be before '%s'", f.Label, v.LessThanField)
+					}
+				}
+			}
+		}
+
+		// ---------- Date-specific cross checks ----------
+		if v.BeforeField != "" {
+			otherVal, ok := values[v.BeforeField]
+			if ok && otherVal != "" && val != "" {
+				dateA, err1 := time.Parse("2006-01-02", val)
+				dateB, err2 := time.Parse("2006-01-02", otherVal)
+				if err1 == nil && err2 == nil && !dateA.Before(dateB) {
+					fieldErrors[f.ID] = fmt.Sprintf("'%s' must be before '%s'", f.Label, v.BeforeField)
+				}
+			}
+		}
+
+		if v.AfterField != "" {
+			otherVal, ok := values[v.AfterField]
+			if ok && otherVal != "" && val != "" {
+				dateA, err1 := time.Parse("2006-01-02", val)
+				dateB, err2 := time.Parse("2006-01-02", otherVal)
+				if err1 == nil && err2 == nil && !dateA.After(dateB) {
+					fieldErrors[f.ID] = fmt.Sprintf("'%s' must be after '%s'", f.Label, v.AfterField)
+				}
+			}
+		}
+
+		// ---------- Equal / Not Equal ----------
+		if v.EqualToField != "" {
+			otherVal := values[v.EqualToField]
+			if val != "" && otherVal != "" && val != otherVal {
+				fieldErrors[f.ID] = fmt.Sprintf("'%s' must equal '%s'", f.Label, v.EqualToField)
+			}
+		}
+
+		if v.NotEqualToField != "" {
+			otherVal := values[v.NotEqualToField]
+			if val != "" && otherVal != "" && val == otherVal {
+				fieldErrors[f.ID] = fmt.Sprintf("'%s' must not equal '%s'", f.Label, v.NotEqualToField)
+			}
+		}
+
+		// ---------- Formula-based validation ----------
+		if v.Formula != "" {
+			ok, err := evalFormula(v.Formula, values)
+			if err != nil {
+				fieldErrors[f.ID] = fmt.Sprintf("Invalid formula for '%s': %v", f.Label, err)
+			} else if !ok {
+				if v.ErrorMessage != "" {
+					fieldErrors[f.ID] = v.ErrorMessage
+				} else {
+					fieldErrors[f.ID] = fmt.Sprintf("Formula validation failed for '%s'", f.Label)
 				}
 			}
 		}
 	}
-	return nil
+
+	if len(fieldErrors) > 0 {
+		return fieldErrors, fmt.Errorf("one or more fields are invalid")
+	}
+
+	return nil, nil
+}
+
+// evalFormula safely evaluates a logical or arithmetic formula and returns whether it’s true.
+func evalFormula(expr string, values map[string]string) (bool, error) {
+	// Parse the formula expression
+	expression, err := govaluate.NewEvaluableExpression(expr)
+	if err != nil {
+		return false, fmt.Errorf("invalid formula syntax: %w", err)
+	}
+
+	// Build parameters for all known field values
+	parameters := make(map[string]interface{})
+	for id, value := range values {
+		if value == "" {
+			parameters[id] = 0.0 // treat empty as zero
+			continue
+		}
+
+		// Try number
+		if num, err := strconv.ParseFloat(value, 64); err == nil {
+			parameters[id] = num
+			continue
+		}
+
+		// Try boolean
+		if value == "true" || value == "false" {
+			parameters[id] = (value == "true")
+			continue
+		}
+
+		// Try date (parse as timestamp)
+		if t, err := time.Parse("2006-01-02", value); err == nil {
+			parameters[id] = float64(t.Unix())
+			continue
+		}
+
+		// Fallback to string
+		parameters[id] = value
+	}
+
+	// Evaluate safely
+	result, err := expression.Evaluate(parameters)
+	if err != nil {
+		return false, fmt.Errorf("formula evaluation error: %w", err)
+	}
+
+	switch val := result.(type) {
+	case bool:
+		return val, nil
+	case float64:
+		return val != 0, nil
+	default:
+		return false, fmt.Errorf("unexpected formula result type: %T", val)
+	}
 }

@@ -1,22 +1,43 @@
 {
   "CASES": [
     {
-      "title": "Patient Information",
+      "title": "Patient Info",
       "layout": "grid",
-      "columns": 3,
       "fields": [
-        { "label": "Patient Name", "type": "text", "validation": { "required": true } },
-        { "label": "Age", "type": "number" },
-        { "label": "Gender", "type": "select", "options": ["Male", "Female", "Other"] },
-        { "label": "Date of Birth", "type": "date" }
-      ]
-    },
-    {
-      "title": "Clinical Data",
-      "layout": "stack",
-      "fields": [
-        { "label": "Symptoms", "type": "multiline" },
-        { "label": "Consent Given", "type": "boolean", "validation": { "required": true } }
+        {
+          "id": "start_age",
+          "label": "Start Age",
+          "type": "number",
+          "validation": { "required": true, "min": 0, "maxLength": 4 }
+        },
+        {
+          "id": "end_age",
+          "label": "End Age",
+          "type": "number",
+          "validation": {
+            "required": true,
+            "greaterThanField": "start_age"
+          }
+        },
+        {
+          "id": "male",
+          "label": "Male",
+          "type": "number"
+        },
+        {
+          "id": "female",
+          "label": "Female",
+          "type": "number"
+        },
+        {
+          "id": "total",
+          "label": "Total",
+          "type": "number",
+          "validation": {
+            "formula": "male + female == total",
+            "errorMessage": "Total must equal Male + Female"
+          }
+        }
       ]
     }
   ]
