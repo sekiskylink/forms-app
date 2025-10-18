@@ -3,20 +3,22 @@ package forms
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
 )
 
+// SubmitForm sends a filled form to the backend API.
+// If the network is unreachable or the server returns an error,
+// it saves the payload locally as a standardized draft.
 func SubmitForm(a fyne.App, apiURL, formName string, payload map[string]string) error {
-	client := &http.Client{Timeout: 15 * time.Second}
-
+	// Prepare JSON body for submission
 	body, err := json.Marshal(map[string]any{
 		"form": formName,
 		"data": payload,
@@ -25,43 +27,59 @@ func SubmitForm(a fyne.App, apiURL, formName string, payload map[string]string) 
 		return fmt.Errorf("marshal error: %v", err)
 	}
 
+	client := &http.Client{Timeout: 15 * time.Second}
 	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(body))
 	if err != nil {
-		return fmt.Errorf("request error: %v", err)
+		return fmt.Errorf("request creation error: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
+	// Perform the network request
 	resp, err := client.Do(req)
 	if err != nil {
-		// 🟡 Network-level failure
+		// 🟡 Network failure → store as standardized draft
 		draft := map[string]any{
-			"form":      formName,
-			"data":      payload,
-			"error":     map[string]any{"type": "network", "message": err.Error()},
-			"timestamp": time.Now().UTC().Format(time.RFC3339),
+			"form": formName,
+			"data": payload,
+			"meta": map[string]any{
+				"saved_at": time.Now().UTC().Format(time.RFC3339),
+				"source":   "auto",
+			},
+			"error": map[string]any{
+				"type":    "network",
+				"message": err.Error(),
+			},
 		}
-		_ = saveTaggedDraft(a, formName, draft)
-		return fmt.Errorf("offline mode — form saved for later upload")
+		if saveErr := SaveTaggedDraft(a, formName, draft); saveErr != nil {
+			return fmt.Errorf("network error: %v (and failed to save draft: %v)", err, saveErr)
+		}
+		return fmt.Errorf("offline mode — form saved to drafts for later upload")
 	}
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
 
-	// ✅ Success
+	// ✅ Success (200–299)
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
 	}
 
-	// 🔴 Any non-successful response → save tagged draft
+	// 🔴 Server-side error → save as standardized draft
 	draft := map[string]any{
-		"form":      formName,
-		"data":      payload,
-		"error":     map[string]any{"type": "server", "code": resp.StatusCode, "message": string(respBody)},
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"form": formName,
+		"data": payload,
+		"meta": map[string]any{
+			"saved_at": time.Now().UTC().Format(time.RFC3339),
+			"source":   "auto",
+		},
+		"error": map[string]any{
+			"type":    "server",
+			"message": fmt.Sprintf("status %d: %s", resp.StatusCode, string(respBody)),
+		},
 	}
-	_ = saveTaggedDraft(a, formName, draft)
 
-	return fmt.Errorf("submission failed (%d): %s — form saved locally", resp.StatusCode, string(respBody))
+	_ = SaveTaggedDraft(a, formName, draft)
+	return errors.New(fmt.Sprintf("server error (%d): %s", resp.StatusCode, string(respBody)))
 }
 
 func saveDraft(a fyne.App, formName string, payload map[string]string) error {
@@ -118,30 +136,50 @@ func LoadDrafts(a fyne.App) ([]string, error) {
 	return drafts, nil
 }
 
-// RetryDraft re-submits a stored draft and deletes it on success.
-func RetryDraft(a fyne.App, apiURL, path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-
-	var payload map[string]string
-	if err := json.Unmarshal(data, &payload); err != nil {
-		return err
-	}
-
-	formName := filepath.Base(path)
-	formName = strings.TrimSuffix(formName, filepath.Ext(formName))
-
-	if err := SubmitForm(a, apiURL, formName, payload); err != nil {
-		return err
-	}
-
-	return os.Remove(path)
+type Draft struct {
+	Form  string            `json:"form"`
+	Data  map[string]string `json:"data"`
+	Meta  map[string]any    `json:"meta"`
+	Error map[string]any    `json:"error"`
 }
 
-// saveTaggedDraft stores a rich JSON draft with metadata like error type and timestamp.
-func saveTaggedDraft(a fyne.App, formName string, payload map[string]any) error {
+// RetryDraft tries to re-upload a saved draft file and deletes it on success.
+func RetryDraft(a fyne.App, apiURL, draftPath string) error {
+	data, err := os.ReadFile(draftPath)
+	if err != nil {
+		return fmt.Errorf("failed to read draft: %v", err)
+	}
+
+	var d Draft
+	if err := json.Unmarshal(data, &d); err != nil {
+		return fmt.Errorf("invalid draft format: %v", err)
+	}
+
+	if d.Form == "" || len(d.Data) == 0 {
+		return fmt.Errorf("draft missing form or data fields")
+	}
+
+	// Try submission
+	err = SubmitForm(a, apiURL, d.Form, d.Data)
+	if err != nil {
+		return fmt.Errorf("retry failed: %v", err)
+	}
+
+	// On success → delete file
+	if rmErr := os.Remove(draftPath); rmErr != nil {
+		return fmt.Errorf("submitted but failed to delete draft: %v", rmErr)
+	}
+
+	fyne.CurrentApp().SendNotification(&fyne.Notification{
+		Title:   "✅ Draft Uploaded",
+		Content: fmt.Sprintf("%s uploaded successfully and removed.", filepath.Base(draftPath)),
+	})
+
+	return nil
+}
+
+// SaveTaggedDraft stores a rich JSON draft with metadata like error type and timestamp.
+func SaveTaggedDraft(a fyne.App, formName string, payload map[string]any) error {
 	root := a.Storage().RootURI().Path()
 	if root == "" {
 		home, err := os.UserHomeDir()

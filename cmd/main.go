@@ -110,6 +110,8 @@ func main() {
 	verifyScreen = func() {
 		content := ui.VerifyScreen(a, func(code string) {
 			log.Println("Verified:", code)
+			forms.StartAutoSync(a, "https://example.com/api/forms/submit")
+			dashboardScreen()
 			dashboardScreen()
 		})
 		back := widget.NewButton("← Back", func() { nav.PopSlide() })
@@ -136,5 +138,6 @@ func main() {
 
 	loginScreen()
 	w.Resize(fyne.NewSize(400, 600))
+
 	w.ShowAndRun()
 }

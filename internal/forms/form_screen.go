@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/Knetic/govaluate"
@@ -183,16 +184,8 @@ func BuildForm(a fyne.App, formName string, sections []Section, onSubmit func(da
 		formContent = tabs
 	}
 
-	submit := widget.NewButton("Submit", func() {
-		// clear previous errors
-		for id, lbl := range errorLabels {
-			lbl.Hide()
-			if r, ok := overlayRects[id]; ok {
-				r.Hide()
-				canvas.Refresh(r)
-			}
-		}
-
+	// helper to collect form values
+	collectData := func() map[string]string {
 		data := map[string]string{}
 		for k, v := range allText {
 			data[k] = v.Text
@@ -208,6 +201,45 @@ func BuildForm(a fyne.App, formName string, sections []Section, onSubmit func(da
 		for k, v := range allBool {
 			data[k] = strconv.FormatBool(v.Checked)
 		}
+		return data
+	}
+
+	// --- Save Draft button ---
+	saveBtn := widget.NewButton("💾 Save Draft", func() {
+		data := collectData()
+
+		draft := map[string]any{
+			"form": formName,
+			"data": data,
+			"meta": map[string]any{
+				"saved_at": time.Now().UTC().Format(time.RFC3339),
+				"source":   "manual",
+			},
+		}
+
+		if err := SaveTaggedDraft(a, formName, draft); err != nil {
+			dialog.ShowError(fmt.Errorf("Failed to save draft: %v", err), a.Driver().AllWindows()[0])
+			return
+		}
+
+		fyne.CurrentApp().SendNotification(&fyne.Notification{
+			Title:   "Draft Saved",
+			Content: fmt.Sprintf("‘%s’ stored locally for later upload.", formName),
+		})
+	})
+
+	// --- Submit button ---
+	submit := widget.NewButton("Submit", func() {
+		// clear previous errors
+		for id, lbl := range errorLabels {
+			lbl.Hide()
+			if r, ok := overlayRects[id]; ok {
+				r.Hide()
+				canvas.Refresh(r)
+			}
+		}
+
+		data := collectData()
 
 		var allFields []Field
 		for _, sec := range sections {
@@ -253,9 +285,12 @@ func BuildForm(a fyne.App, formName string, sections []Section, onSubmit func(da
 		}()
 	})
 
+	// --- Footer buttons ---
+	buttons := container.NewHBox(layout.NewSpacer(), saveBtn, submit, layout.NewSpacer())
+
 	return container.NewBorder(
 		nil,
-		container.NewVBox(submit),
+		container.NewVBox(buttons),
 		nil,
 		nil,
 		container.NewVBox(
