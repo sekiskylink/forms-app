@@ -1,27 +1,97 @@
 package main
 
 import (
+	"fmt"
+	"image/color"
 	"log"
-	"os"
-	"path/filepath"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"forms-app/internal/forms"
 	"forms-app/internal/ui"
 )
 
+// statusBanner shows a horizontal, visible, dismissible banner at the top.
+func statusBanner(source string, w fyne.Window) fyne.CanvasObject {
+	var msg string
+	var bg color.Color
+
+	switch source {
+	case "api":
+		msg = "🟢 Online Mode – Loaded from API"
+		bg = color.NRGBA{0, 200, 0, 80}
+	case "cache":
+		msg = "🟡 Offline Mode – Loaded from Cache"
+		bg = color.NRGBA{255, 210, 0, 80}
+	case "embedded":
+		msg = "🔴 Offline Mode – Using Embedded Forms"
+		bg = color.NRGBA{255, 0, 0, 80}
+	default:
+		msg = "⚠️ Unable to load forms"
+		bg = color.NRGBA{120, 120, 120, 80}
+	}
+
+	// Background rectangle
+	bgRect := canvas.NewRectangle(bg)
+	bgRect.CornerRadius = 8
+	bgRect.SetMinSize(fyne.NewSize(0, 40))
+
+	// The visible text
+	label := canvas.NewText(msg, theme.Color(theme.ColorNameForeground))
+	label.TextSize = 14
+	label.Alignment = fyne.TextAlignLeading
+
+	// Container variables must be declared before closure use
+	var banner *fyne.Container
+
+	// Close button
+	closeBtn := widget.NewButton("×", func() {
+		banner.Hide()
+	})
+	closeBtn.Importance = widget.LowImportance
+
+	// Horizontal layout with some padding
+	content := container.New(layout.NewHBoxLayout(),
+		layout.NewSpacer(),
+		label,
+		layout.NewSpacer(),
+		closeBtn,
+	)
+	content = container.NewPadded(content)
+
+	// Stack: background first, then content
+	banner = container.NewMax(bgRect, content)
+
+	return banner
+}
+
 func main() {
-	a := app.New()
+	a := app.NewWithID("com.example.formsapp")
 	w := a.NewWindow("Surveillance Forms")
 
-	// Load form definitions
-	wd, _ := os.Getwd()
-	formPath := filepath.Join(wd, "../assets", "forms.json")
-	allForms, _ := forms.LoadForms(formPath)
+	apiURL := "https://example.com/api/forms"
+	appName := "forms-app"
+
+	allForms, source, err := forms.LoadForms(a, apiURL, appName)
+	if err != nil {
+		fmt.Println("⚠️ Could not fetch from API:", err)
+		allForms, err = forms.LoadFromEmbedded()
+		source = "embedded"
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("Failed to load any form definitions: %v", err), w)
+			allForms = map[string][]forms.Section{}
+			source = "error"
+		} else {
+			fmt.Println("✅ Loaded embedded forms.json")
+		}
+	}
 
 	// Create navigator
 	nav := ui.NewNavigator(w)
@@ -48,7 +118,8 @@ func main() {
 	}
 
 	dashboardScreen = func() {
-		content := ui.DashboardScreen(a, allForms, func(name string) {
+		banner := statusBanner(source, w)
+		content := ui.DashboardScreen(a, allForms, banner, func(name string) {
 			formFields := allForms[name]
 			formContent := forms.BuildForm(a, name, formFields, func(data map[string]string) {
 				log.Println("Submitted", name, data)
@@ -63,7 +134,6 @@ func main() {
 		nav.PushSlide(screen)
 	}
 
-	// Start app
 	loginScreen()
 	w.Resize(fyne.NewSize(400, 600))
 	w.ShowAndRun()

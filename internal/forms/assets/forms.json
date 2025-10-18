@@ -1,0 +1,119 @@
+{
+  "version": "2025.10.17",
+  "lastUpdated": "2025-10-17T12:00:00Z",
+  "forms": {
+    "CASES": [
+      {
+        "title": "Patient Information",
+        "layout": "grid",
+        "columns": 2,
+        "fields": [
+          {
+            "id": "patient_name",
+            "label": "Patient Name",
+            "type": "text",
+            "validation": { "required": true, "minLength": 3, "maxLength": 50 }
+          },
+          {
+            "id": "age",
+            "label": "Age",
+            "type": "number",
+            "validation": { "required": true, "min": 0, "max": 120 }
+          },
+          {
+            "id": "sex",
+            "label": "Sex",
+            "type": "select",
+            "options": ["Male", "Female"],
+            "validation": { "required": true }
+          },
+          {
+            "id": "date_onset",
+            "label": "Date of Onset",
+            "type": "date",
+            "validation": { "required": true, "maxDate": "2025-12-31" }
+          },
+          {
+            "id": "date_reported",
+            "label": "Date Reported",
+            "type": "date",
+            "validation": { "required": true, "afterField": "date_onset" }
+          },
+          {
+            "id": "symptoms",
+            "label": "Symptoms",
+            "type": "multiline",
+            "validation": { "maxLength": 200 }
+          }
+        ]
+      }
+    ],
+
+    "DEATH": [
+      {
+        "title": "Death Record",
+        "layout": "grid",
+        "columns": 2,
+        "fields": [
+          {
+            "id": "deceased_name",
+            "label": "Deceased Name",
+            "type": "text",
+            "validation": { "required": true }
+          },
+          {
+            "id": "age_at_death",
+            "label": "Age at Death",
+            "type": "number",
+            "validation": { "min": 0, "max": 120 }
+          },
+          {
+            "id": "cause_of_death",
+            "label": "Cause of Death",
+            "type": "text",
+            "validation": { "required": true }
+          },
+          {
+            "id": "date_of_death",
+            "label": "Date of Death",
+            "type": "date",
+            "validation": { "required": true }
+          }
+        ]
+      }
+    ],
+
+    "EPC": [
+      {
+        "title": "Environmental Sample Collection",
+        "layout": "grid",
+        "columns": 2,
+        "fields": [
+          {
+            "id": "sample_id",
+            "label": "Sample ID",
+            "type": "text",
+            "validation": { "required": true }
+          },
+          {
+            "id": "collection_site",
+            "label": "Collection Site",
+            "type": "text",
+            "validation": { "required": true }
+          },
+          {
+            "id": "collection_date",
+            "label": "Collection Date",
+            "type": "date",
+            "validation": { "required": true }
+          },
+          {
+            "id": "collector_name",
+            "label": "Collector Name",
+            "type": "text"
+          }
+        ]
+      }
+    ]
+  }
+}

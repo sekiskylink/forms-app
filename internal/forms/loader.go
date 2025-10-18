@@ -39,8 +39,14 @@ type Section struct {
 	Fields  []Field `json:"fields"`
 }
 
+type FormBundle struct {
+	Version     string               `json:"version"`
+	LastUpdated string               `json:"lastUpdated,omitempty"`
+	Forms       map[string][]Section `json:"forms"`
+}
+
 // Each form now maps to a list of sections
-func LoadForms(path string) (map[string][]Section, error) {
+func LoadForms2(path string) (map[string][]Section, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

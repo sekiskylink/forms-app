@@ -230,10 +230,24 @@ func BuildForm(a fyne.App, formName string, sections []Section, onSubmit func(da
 			return
 		}
 
+		apiURL := "https://example.com/api/forms/submit"
 		go func() {
-			time.Sleep(800 * time.Millisecond)
+			err := SubmitForm(a, apiURL, formName, data)
 			fyne.Do(func() {
-				dialog.ShowInformation("✅ Success", "Form submitted successfully!", a.Driver().AllWindows()[0])
+				if err != nil {
+					if strings.Contains(err.Error(), "offline mode") {
+						dialog.ShowInformation("📥 Saved Offline",
+							"No network — form stored locally for later upload.",
+							a.Driver().AllWindows()[0])
+					} else {
+						dialog.ShowError(fmt.Errorf("Submission failed: %v", err),
+							a.Driver().AllWindows()[0])
+					}
+					return
+				}
+				dialog.ShowInformation("✅ Success",
+					"Form submitted successfully!",
+					a.Driver().AllWindows()[0])
 				onSubmit(data)
 			})
 		}()
