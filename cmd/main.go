@@ -19,7 +19,7 @@ import (
 )
 
 // statusBanner shows a horizontal, visible, dismissible banner at the top.
-func statusBanner(source string, w fyne.Window) fyne.CanvasObject {
+func statusBanner(source string) fyne.CanvasObject {
 	var msg string
 	var bg color.Color
 
@@ -120,7 +120,7 @@ func main() {
 	}
 
 	dashboardScreen = func() {
-		banner := statusBanner(source, w)
+		banner := statusBanner(source)
 		content := ui.DashboardScreen(a, allForms, banner, func(name string) {
 			formFields := allForms[name]
 			formContent := forms.BuildForm(a, name, formFields.Sections, func(data map[string]string) {

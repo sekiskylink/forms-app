@@ -12,29 +12,9 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/Knetic/govaluate"
 )
-
-// highlightField draws a thin red border around an input field
-func highlightField(obj fyne.CanvasObject, errMsg string, errLbl *widget.Label) fyne.CanvasObject {
-	rect := canvas.NewRectangle(theme.ErrorColor())
-	rect.StrokeWidth = 2
-	rect.FillColor = color.NRGBA{0, 0, 0, 0} // transparent fill
-	rect.SetMinSize(obj.MinSize())
-
-	errLbl.SetText("⚠ " + errMsg)
-	errLbl.Show()
-
-	overlay := container.NewStack(obj, rect)
-	return container.NewVBox(overlay, errLbl)
-}
-
-// clearHighlight hides an error label and removes the border
-func clearHighlight(errLbl *widget.Label) {
-	errLbl.Hide()
-}
 
 func makeAdaptiveGrid(w fyne.Window, items []fyne.CanvasObject) fyne.CanvasObject {
 	width := w.Canvas().Size().Width

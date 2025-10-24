@@ -51,7 +51,11 @@ func fetchBundleFromAPI(url string) (FormBundle, error) {
 	if err != nil {
 		return bundle, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	}()
 
 	if resp.StatusCode != 200 {
 		return bundle, fmt.Errorf("server returned %s", resp.Status)
