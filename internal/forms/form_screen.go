@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/Knetic/govaluate"
 )
@@ -269,7 +270,7 @@ func BuildForm(
 		container.NewVBox(buttons),
 		nil, nil,
 		container.NewVBox(
-			widget.NewLabelWithStyle(formName+" Form", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+			// widget.NewLabelWithStyle(formName+" Form", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
 			formContent,
 		),
 	)
@@ -545,4 +546,39 @@ func evalFormula(expr string, values map[string]string) (bool, error) {
 	default:
 		return false, fmt.Errorf("unexpected formula result type: %T", val)
 	}
+}
+
+// MakeFormScreen creates a themed form screen with a sticky top app bar.
+func MakeFormScreen(a fyne.App, formName string, formContent fyne.CanvasObject, onBack func()) fyne.CanvasObject {
+	// Theme-aware bar color
+	barColor := theme.Color(theme.ColorNamePrimary)
+	if a.Settings().ThemeVariant() == theme.VariantDark {
+		barColor = color.NRGBA{30, 30, 30, 255}
+	}
+
+	barBg := canvas.NewRectangle(barColor)
+	barBg.SetMinSize(fyne.NewSize(0, 56))
+
+	// Back button
+	backBtn := widget.NewButtonWithIcon("", theme.NavigateBackIcon(), func() { onBack() })
+	backBtn.Importance = widget.LowImportance
+
+	// Title (single line, no wrapping)
+	title := widget.NewLabelWithStyle(formName, fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
+	title.Wrapping = fyne.TextWrapOff // ✅ replaces deprecated TextTruncate
+
+	// AppBar with Border layout: back on left, (no actions) on right, title center
+	appBarContent := container.NewBorder(nil, nil, backBtn, nil, title)
+	appBar := container.NewMax(barBg, container.NewPadded(appBarContent))
+
+	// Scrollable form content below the bar (keeps app bar sticky)
+	scroll := container.NewVScroll(container.NewPadded(formContent))
+
+	return container.NewBorder(
+		appBar, // top
+		nil,    // bottom
+		nil,    // left
+		nil,    // right
+		scroll, // content
+	)
 }

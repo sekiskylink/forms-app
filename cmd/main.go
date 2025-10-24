@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
+
 	"fyne.io/fyne/v2/widget"
 
 	"forms-app/internal/forms"
@@ -67,14 +68,15 @@ func statusBanner(source string) fyne.CanvasObject {
 	content = container.NewPadded(content)
 
 	// Stack: background first, then content
-	banner = container.NewMax(bgRect, content)
+	banner = container.NewStack(bgRect, content)
 
 	return banner
 }
 
 func main() {
 	a := app.NewWithID("com.example.formsapp")
-	w := a.NewWindow("Surveillance Forms")
+	w := a.NewWindow("SukumaPro")
+	ui.ApplyCustomTheme(a)
 
 	apiURL := "https://example.com/api/forms"
 	appName := "forms-app"
@@ -112,10 +114,9 @@ func main() {
 			log.Println("Verified:", code)
 			forms.StartAutoSync(a, "https://example.com/api/forms/submit")
 			dashboardScreen()
-			dashboardScreen()
 		})
-		back := widget.NewButton("← Back", func() { nav.PopSlide() })
-		screen := container.NewBorder(back, nil, nil, nil, content)
+		// back := widget.NewButton("← Back", func() { nav.PopSlide() })
+		screen := container.NewBorder(nil, nil, nil, nil, content)
 		nav.PushSlide(screen)
 	}
 
@@ -127,12 +128,14 @@ func main() {
 				log.Println("Submitted", name, data)
 				nav.PopSlide()
 			})
-			back := widget.NewButton("← Back", func() { nav.PopSlide() })
-			screen := container.NewBorder(back, nil, nil, nil, formContent)
-			nav.PushSlide(screen)
+
+			formScreen := forms.MakeFormScreen(a, name, formContent, func() {
+				nav.PopSlide()
+			})
+			nav.PushSlide(formScreen)
 		})
-		back := widget.NewButton("← Logout", func() { loginScreen() })
-		screen := container.NewBorder(back, nil, nil, nil, content)
+		// back := widget.NewButton("← Logout", func() { loginScreen() })
+		screen := container.NewBorder(nil, nil, nil, nil, content)
 		nav.PushSlide(screen)
 	}
 

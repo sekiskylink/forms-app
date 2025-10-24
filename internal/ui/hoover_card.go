@@ -11,96 +11,73 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// HoverCard is a transparent tappable + hoverable overlay that sits above some content.
-type HoverCard struct {
+func NewHoverCard(content fyne.CanvasObject, onTap func()) fyne.CanvasObject {
+	// Base background that adapts to theme
+	base := theme.Color(theme.ColorNameInputBackground) // theme-safe surface color
+	bg := canvas.NewRectangle(base)
+	bg.CornerRadius = 8
+
+	// Hover color = subtle lighten/darken relative to base
+	hover := shiftRGBA(base, 8) // small delta; positive brightens, negative darkens
+
+	card := container.NewStack(bg, content)
+
+	t := &hoverCard{
+		Card:  card,
+		Bg:    bg,
+		Base:  base,
+		Hover: hover,
+		OnTap: onTap,
+	}
+	t.ExtendBaseWidget(t)
+	return t
+}
+
+type hoverCard struct {
 	widget.BaseWidget
-
-	content fyne.CanvasObject
-	bg      *canvas.Rectangle
-	overlay *canvas.Rectangle
-
-	onTap func()
+	Card        *fyne.Container
+	Bg          *canvas.Rectangle
+	Base, Hover color.Color
+	OnTap       func()
 }
 
-func NewHoverCard(content fyne.CanvasObject, onTap func()) *HoverCard {
-	// v2.6.x: use theme.BackgroundColor() / theme.HoverColor()
-	bg := canvas.NewRectangle(theme.BackgroundColor())
-	overlay := canvas.NewRectangle(theme.HoverColor())
-	overlay.Hide()
-
-	h := &HoverCard{
-		content: content,
-		bg:      bg,
-		overlay: overlay,
-		onTap:   onTap,
-	}
-	h.ExtendBaseWidget(h)
-	return h
+func (h *hoverCard) CreateRenderer() fyne.WidgetRenderer {
+	return widget.NewSimpleRenderer(h.Card)
 }
 
-// --- Interaction ---
+func (h *hoverCard) MouseIn(_ *desktop.MouseEvent) {
+	h.Bg.FillColor = h.Hover
+	h.Bg.Refresh()
+}
 
-// Tapped implements fyne.Tappable
-func (h *HoverCard) Tapped(_ *fyne.PointEvent) {
-	if h.onTap != nil {
-		h.onTap()
+func (h *hoverCard) MouseMoved(_ *desktop.MouseEvent) {}
+
+func (h *hoverCard) MouseOut() {
+	h.Bg.FillColor = h.Base
+	h.Bg.Refresh()
+}
+
+func (h *hoverCard) Tapped(_ *fyne.PointEvent) {
+	if h.OnTap != nil {
+		h.OnTap()
 	}
 }
 
-// MouseIn implements desktop.Hoverable (desktop only; won't fire on mobile)
-func (h *HoverCard) MouseIn(_ *desktop.MouseEvent) {
-	h.overlay.Show()
-	canvas.Refresh(h.overlay)
+// shiftRGBA slightly brightens (>0) or darkens (<0) a theme color.
+func shiftRGBA(c color.Color, delta int) color.Color {
+	r, g, b, a := c.RGBA()
+	rr := clamp(int(r>>8)+delta, 0, 255)
+	gg := clamp(int(g>>8)+delta, 0, 255)
+	bb := clamp(int(b>>8)+delta, 0, 255)
+	return color.NRGBA{uint8(rr), uint8(gg), uint8(bb), uint8(a >> 8)}
 }
 
-// MouseOut implements desktop.Hoverable
-func (h *HoverCard) MouseOut() {
-	h.overlay.Hide()
-	canvas.Refresh(h.overlay)
-}
-
-// MouseMoved implements desktop.Hoverable
-func (h *HoverCard) MouseMoved(_ *desktop.MouseEvent) {}
-
-// --- Renderer ---
-
-type hoverCardRenderer struct {
-	card    *HoverCard
-	stack   *fyne.Container // <- use *fyne.Container, not *container.Stack
-	objects []fyne.CanvasObject
-}
-
-func (h *HoverCard) CreateRenderer() fyne.WidgetRenderer {
-	// Stack order: bg -> content -> overlay
-	st := container.NewStack(h.bg, h.content, h.overlay)
-	r := &hoverCardRenderer{
-		card:    h,
-		stack:   st,
-		objects: []fyne.CanvasObject{st},
+func clamp(v, lo, hi int) int {
+	if v < lo {
+		return lo
 	}
-	return r
+	if v > hi {
+		return hi
+	}
+	return v
 }
-
-func (r *hoverCardRenderer) Layout(size fyne.Size) {
-	r.stack.Resize(size) // ok on v2.6.x because *fyne.Container implements CanvasObject
-}
-
-func (r *hoverCardRenderer) MinSize() fyne.Size {
-	min := r.card.content.MinSize()
-	padding := fyne.NewSize(12, 10)
-	return min.Add(padding)
-}
-
-func (r *hoverCardRenderer) Refresh() {
-	// keep colors in sync with theme (v2.6.x API)
-	r.card.bg.FillColor = theme.BackgroundColor()
-	r.card.overlay.FillColor = theme.HoverColor()
-	canvas.Refresh(r.stack)
-}
-
-func (r *hoverCardRenderer) BackgroundColor() color.Color {
-	return theme.BackgroundColor()
-}
-
-func (r *hoverCardRenderer) Objects() []fyne.CanvasObject { return r.objects }
-func (r *hoverCardRenderer) Destroy()                     {}

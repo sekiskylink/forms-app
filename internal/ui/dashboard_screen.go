@@ -3,7 +3,9 @@ package ui
 import (
 	"bytes"
 	"fmt"
+	"image/color"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -30,17 +32,13 @@ func DashboardScreen(
 	for code, def := range formDefs {
 		meta := def.Meta
 
-		// Load icon
 		var icon *canvas.Image
 		if meta.Icon != "" {
-			// Simple heuristic: URL vs local file
 			if strings.HasPrefix(meta.Icon, "http://") || strings.HasPrefix(meta.Icon, "https://") {
 				if uri, err := storage.ParseURI(meta.Icon); err == nil {
 					icon = canvas.NewImageFromURI(uri)
 				}
 			} else {
-				// Local/packaged file path
-				// icon = canvas.NewImageFromFile(meta.Icon)
 				switch meta.Icon {
 				case "tb.png":
 					icon = canvas.NewImageFromReader(bytes.NewReader(forms.IconTB), "tb")
@@ -49,40 +47,27 @@ func DashboardScreen(
 				case "cases.png":
 					icon = canvas.NewImageFromReader(bytes.NewReader(forms.IconCases), "cases")
 				default:
-					res := fyne.CurrentApp().Settings().Theme().Icon(theme.IconNameFile)
+					res := a.Settings().Theme().Icon(theme.IconNameFile)
 					icon = canvas.NewImageFromResource(res)
 				}
 			}
 		}
-
 		if icon == nil {
-			// ✅ Fyne v2.6.3-compatible themed fallback icon (single arg)
 			res := a.Settings().Theme().Icon(theme.IconNameFile)
 			icon = canvas.NewImageFromResource(res)
 		}
 
-		// consistent sizing
 		icon.SetMinSize(fyne.NewSize(40, 40))
 		icon.FillMode = canvas.ImageFillContain
 
-		// Title + description (theme-friendly)
 		title := widget.NewLabelWithStyle(meta.Name, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 		desc := widget.NewLabelWithStyle(meta.Description, fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
 		desc.Wrapping = fyne.TextWrapWord
 
 		textBox := container.NewVBox(title, desc)
 		cardBody := container.NewBorder(nil, nil, icon, nil, textBox)
-
-		// Clickable overlay
-		btn := widget.NewButton("", func() { openForm(code) })
-		btn.Importance = widget.LowImportance
-
-		//card := container.NewStack(
-		//	canvas.NewRectangle(color.NRGBA{245, 245, 245, 255}),
-		//	container.NewPadded(cardBody),
-		//	btn,
-		//)
 		padded := container.NewPadded(cardBody)
+
 		card := NewHoverCard(padded, func() { openForm(code) })
 		cards = append(cards, card)
 	}
@@ -91,14 +76,12 @@ func DashboardScreen(
 		cards = append(cards, widget.NewLabel("⚠️ No forms available."))
 	}
 
-	// Scrollable list
 	scroll := container.NewVScroll(container.NewVBox(cards...))
 	scroll.SetMinSize(fyne.NewSize(360, 480))
 
 	// --- Drafts ---
 	apiURL := "https://example.com/api/forms/submit"
 	drafts, _ := forms.LoadDrafts(a)
-
 	var draftBtn fyne.CanvasObject
 	if len(drafts) > 0 {
 		count := len(drafts)
@@ -116,25 +99,24 @@ func DashboardScreen(
 	// --- Theme toggle ---
 	dark := a.Preferences().BoolWithFallback("darkMode", false)
 	var themeBtn *widget.Button
-	themeBtn = widget.NewButton("", func() {
+	var icon fyne.Resource
+	if dark {
+		icon = theme.NewThemedResource(theme.VisibilityIcon())
+	} else {
+		icon = theme.NewThemedResource(theme.VisibilityOffIcon())
+	}
+	themeBtn = widget.NewButtonWithIcon("", icon, func() {
 		dark = !dark
 		a.Preferences().SetBool("darkMode", dark)
 		SetDark(a, dark)
 		if dark {
-			themeBtn.SetText("🌙 Dark")
+			themeBtn.SetIcon(theme.NewThemedResource(theme.VisibilityIcon()))
 		} else {
-			themeBtn.SetText("🌞 Light")
+			themeBtn.SetIcon(theme.NewThemedResource(theme.VisibilityOffIcon()))
 		}
 	})
 
-	SetDark(a, dark)
-	if dark {
-		themeBtn.SetText("🌙 Dark")
-	} else {
-		themeBtn.SetText("🌞 Light")
-	}
-
-	// --- Auto sync + manual sync ---
+	// --- Sync buttons ---
 	autoSwitch := widget.NewCheck("Auto Sync", func(on bool) {
 		a.Preferences().SetBool("autoSyncEnabled", on)
 		status := "disabled"
@@ -145,7 +127,7 @@ func DashboardScreen(
 	})
 	autoSwitch.SetChecked(a.Preferences().BoolWithFallback("autoSyncEnabled", true))
 
-	syncNowBtn := widget.NewButton("🔄 Sync Now", func() {
+	syncNowBtn := widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() {
 		go func() {
 			fyne.Do(func() {
 				dialog.ShowInformation("Manual Sync", "Starting draft sync...", a.Driver().AllWindows()[0])
@@ -157,6 +139,7 @@ func DashboardScreen(
 			})
 		}()
 	})
+
 	syncNowBtn.Disable()
 	if !autoSwitch.Checked {
 		syncNowBtn.Enable()
@@ -170,31 +153,151 @@ func DashboardScreen(
 		}
 	}
 
-	// --- Header ---
-	header := container.NewHBox(
-		widget.NewLabelWithStyle("Available Forms", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		layout.NewSpacer(),
-		themeBtn,
-		autoSwitch,
-		syncNowBtn,
-	)
+	// --- Side Drawer (non-navigating overlay) ---
+	isDrawerOpen := false
+	var sideDrawer fyne.CanvasObject
+	var overlay fyne.CanvasObject
+	win := a.Driver().AllWindows()[0]
+	canvasWidth := win.Canvas().Size().Width
 
-	// --- Main content ---
-	mainContent := container.NewVBox(
+	drawerWidth := fyne.Min(300, canvasWidth*0.5)
+	sideDrawer = buildSideDrawer(a, func() {
+		main := LoginScreen(a, func(phone string) {
+			fmt.Println("Logged out:", phone)
+		})
+		a.Driver().AllWindows()[0].SetContent(main)
+	}, func() {
+		// ✅ Close drawer callback
+		if isDrawerOpen {
+			hideDrawer(sideDrawer, overlay, drawerWidth)
+			isDrawerOpen = false
+		}
+	})
+
+	sideDrawer.Resize(fyne.NewSize(drawerWidth, win.Canvas().Size().Height))
+	sideDrawer.Move(fyne.NewPos(-drawerWidth, 0))
+	sideDrawer.Hide()
+
+	overlay = newTappableOverlay(func() {
+		if isDrawerOpen {
+			hideDrawer(sideDrawer, overlay, drawerWidth)
+			isDrawerOpen = false
+		}
+	})
+	overlay.Hide()
+
+	// ESC closes drawer
+	win.Canvas().SetOnTypedKey(func(ev *fyne.KeyEvent) {
+		if ev.Name == fyne.KeyEscape && isDrawerOpen {
+			hideDrawer(sideDrawer, overlay, drawerWidth)
+			isDrawerOpen = false
+		}
+	})
+
+	// --- App Bar ---
+	appBarColor := color.NRGBA{25, 118, 210, 255}
+	appBarBg := canvas.NewRectangle(appBarColor)
+	appBarBg.SetMinSize(fyne.NewSize(0, 56))
+	titleLabel := widget.NewLabelWithStyle("Surveillance Forms", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	titleLabel.Alignment = fyne.TextAlignLeading
+
+	menuBtn := widget.NewButton("☰", func() {
+		if isDrawerOpen {
+			hideDrawer(sideDrawer, overlay, drawerWidth)
+		} else {
+			showDrawer(sideDrawer, overlay, drawerWidth)
+		}
+		isDrawerOpen = !isDrawerOpen
+	})
+
+	appBarContent := container.NewHBox(menuBtn, layout.NewSpacer(), titleLabel, layout.NewSpacer(), themeBtn, syncNowBtn)
+	appBar := container.NewMax(appBarBg, container.NewPadded(appBarContent))
+
+	content := container.NewVBox(appBar, banner, draftBtn, container.NewPadded(scroll))
+
+	// ✅ Drawer is purely an overlay, not part of navigation
+	root := container.NewStack(content, overlay, sideDrawer)
+	return root
+}
+
+func showDrawer(sideDrawer fyne.CanvasObject, overlay fyne.CanvasObject, width float32) {
+	sideDrawer.Show()
+	overlay.Show()
+	anim := canvas.NewPositionAnimation(
+		fyne.NewPos(-width, 0),
+		fyne.NewPos(0, 0),
+		200*time.Millisecond,
+		func(p fyne.Position) {
+			sideDrawer.Move(p)
+			canvas.Refresh(sideDrawer)
+		},
+	)
+	anim.Start()
+}
+
+func hideDrawer(sideDrawer fyne.CanvasObject, overlay fyne.CanvasObject, width float32) {
+	anim := canvas.NewPositionAnimation(
+		sideDrawer.Position(),
+		fyne.NewPos(-width, 0),
+		200*time.Millisecond,
+		func(p fyne.Position) {
+			sideDrawer.Move(p)
+			canvas.Refresh(sideDrawer)
+		},
+	)
+	anim.Start()
+
+	// ⏳ Wait slightly longer than the animation duration, then hide both
+	go func() {
+		time.Sleep(220 * time.Millisecond) // a little buffer
+		fyne.Do(func() {
+			sideDrawer.Hide()
+			overlay.Hide()
+		})
+	}()
+}
+
+func buildSideDrawer(a fyne.App, onLogout func(), closeDrawer func()) fyne.CanvasObject {
+	bg := canvas.NewRectangle(color.NRGBA{255, 255, 255, 255})
+
+	// Header
+	title := widget.NewLabelWithStyle("Menu", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	closeBtn := widget.NewButton("✕", func() {
+		closeDrawer() // ✅ invoke parent's close function
+	})
+
+	header := container.NewBorder(nil, nil, nil, closeBtn, title)
+
+	// Menu items
+	logoutBtn := widget.NewButtonWithIcon("Logout", theme.LogoutIcon(), func() {
+		closeDrawer()
+		onLogout()
+	})
+	settingsBtn := widget.NewButtonWithIcon("Settings", theme.SettingsIcon(), func() {
+		dialog.ShowInformation("Settings", "Settings coming soon.", a.Driver().AllWindows()[0])
+	})
+	aboutBtn := widget.NewButtonWithIcon("About", theme.InfoIcon(), func() {
+		dialog.ShowInformation("About", "Surveillance Forms v1.0", a.Driver().AllWindows()[0])
+	})
+
+	sideContent := container.NewVBox(
 		header,
-		draftBtn,
-		container.NewPadded(scroll),
+		widget.NewSeparator(),
+		logoutBtn,
+		settingsBtn,
+		aboutBtn,
+		layout.NewSpacer(),
 	)
+	side := container.NewMax(bg, container.NewPadded(sideContent))
 
-	if banner != nil {
-		return container.NewBorder(
-			banner,
-			nil, nil, nil,
-			mainContent,
-		)
-	}
+	// ✅ Half-screen width
+	win := a.Driver().AllWindows()[0]
+	winWidth := win.Canvas().Size().Width
+	drawerWidth := fyne.Min(300, winWidth*0.5)
+	side.Resize(fyne.NewSize(drawerWidth, win.Canvas().Size().Height))
+	side.Move(fyne.NewPos(-drawerWidth, 0)) // start hidden off-screen
 
-	return mainContent
+	return side
 }
 
 // plural adds "s" for plural count
