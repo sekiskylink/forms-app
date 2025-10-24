@@ -49,4 +49,5 @@ type FormBundle struct {
 	Version     string                    `json:"version"`
 	LastUpdated string                    `json:"lastUpdated,omitempty"`
 	Forms       map[string]FormDefinition `json:"forms"`
+	FormOrder   []string                  `json:"form_order,omitempty"`
 }

@@ -23,13 +23,18 @@ import (
 func DashboardScreen(
 	a fyne.App,
 	formDefs map[string]forms.FormDefinition,
+	order []string,
 	banner fyne.CanvasObject,
 	openForm func(name string),
 ) fyne.CanvasObject {
 
 	// --- Build form cards ---
 	var cards []fyne.CanvasObject
-	for code, def := range formDefs {
+	for _, code := range order {
+		def, ok := formDefs[code]
+		if !ok {
+			continue
+		}
 		meta := def.Meta
 
 		var icon *canvas.Image
@@ -87,7 +92,7 @@ func DashboardScreen(
 		count := len(drafts)
 		draftBtn = widget.NewButton(fmt.Sprintf("📂 View %d Draft%s", count, plural(count)), func() {
 			screen := DraftsScreen(a, apiURL, a.Driver().AllWindows()[0], func() {
-				main := DashboardScreen(a, formDefs, banner, openForm)
+				main := DashboardScreen(a, formDefs, order, banner, openForm)
 				a.Driver().AllWindows()[0].SetContent(main)
 			})
 			a.Driver().AllWindows()[0].SetContent(screen)

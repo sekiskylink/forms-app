@@ -81,10 +81,11 @@ func main() {
 	apiURL := "https://example.com/api/forms"
 	appName := "forms-app"
 
-	allForms, source, err := forms.LoadForms(a, apiURL, appName)
+	allForms, order, source, err := forms.LoadForms(a, apiURL, appName)
+	fmt.Println("ORDER:", order)
 	if err != nil {
 		fmt.Println("⚠️ Could not fetch from API:", err)
-		allForms, err = forms.LoadFromEmbedded()
+		allForms, order, err = forms.LoadFromEmbedded()
 		source = "embedded"
 		if err != nil {
 			dialog.ShowError(fmt.Errorf("Failed to load any form definitions: %v", err), w)
@@ -122,7 +123,7 @@ func main() {
 
 	dashboardScreen = func() {
 		banner := statusBanner(source)
-		content := ui.DashboardScreen(a, allForms, banner, func(name string) {
+		content := ui.DashboardScreen(a, allForms, order, banner, func(name string) {
 			formFields := allForms[name]
 			formContent := forms.BuildForm(a, name, formFields.Sections, func(data map[string]string) {
 				log.Println("Submitted", name, data)

@@ -1,5 +1,6 @@
 {
-  "version": "2025.10.23",
+  "version": "2025.10.24",
+  "form_order": ["CASES", "DEATH", "TB"],
   "forms": {
     "CASES": {
       "meta": {

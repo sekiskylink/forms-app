@@ -12,7 +12,7 @@ import (
 	"fyne.io/fyne/v2"
 )
 
-func LoadForms(a fyne.App, apiURL, appName string) (map[string]FormDefinition, string, error) {
+func LoadForms(a fyne.App, apiURL, appName string) (map[string]FormDefinition, []string, string, error) {
 	cache, _ := loadBundleFromCache(a, appName)
 
 	// Try API first
@@ -20,15 +20,22 @@ func LoadForms(a fyne.App, apiURL, appName string) (map[string]FormDefinition, s
 	if err != nil {
 		if cache.Forms != nil {
 			fmt.Println("⚠️ Using cached forms:", err)
-			return cache.Forms, "cache", nil
+			return cache.Forms, cache.FormOrder, "cache", nil
 		}
-		return nil, "error", fmt.Errorf("no network and no cached forms available")
+		return nil, nil, "error", fmt.Errorf("no network and no cached forms available")
 	}
 
 	// Compare versions
 	if cache.Version != "" && cache.Version == serverBundle.Version {
 		fmt.Println("✅ Forms up to date (version", cache.Version, ")")
-		return cache.Forms, "cache", nil
+		return cache.Forms, cache.FormOrder, "cache", nil
+	}
+
+	// If the server didn’t provide an order, build one deterministically
+	if len(serverBundle.FormOrder) == 0 {
+		for key := range serverBundle.Forms {
+			serverBundle.FormOrder = append(serverBundle.FormOrder, key)
+		}
 	}
 
 	// Save new bundle
@@ -37,7 +44,7 @@ func LoadForms(a fyne.App, apiURL, appName string) (map[string]FormDefinition, s
 	}
 	fmt.Println("⬇️  Updated forms cache to version", serverBundle.Version)
 
-	return serverBundle.Forms, "api", nil
+	return serverBundle.Forms, serverBundle.FormOrder, "api", nil
 }
 
 // ------------------- helpers -------------------
