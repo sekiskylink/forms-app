@@ -12,7 +12,6 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/Knetic/govaluate"
@@ -53,7 +52,18 @@ func makeAdaptiveGrid(w fyne.Window, items []fyne.CanvasObject) fyne.CanvasObjec
 
 // BuildForm builds a form with section tabs.
 // Supports "grid"/"stack" layouts, responsive columns, and auto-hides tabs if only one section.
-func BuildForm(a fyne.App, formName string, sections []Section, onSubmit func(data map[string]string)) fyne.CanvasObject {
+func BuildForm(
+	a fyne.App,
+	formName string,
+	sections []Section,
+	onSubmit func(data map[string]string),
+	prefill ...map[string]string, // optional prefill values
+) fyne.CanvasObject {
+	var values map[string]string
+	if len(prefill) > 0 {
+		values = prefill[0]
+	}
+
 	allText := make(map[string]*widget.Entry)
 	allSelect := make(map[string]*widget.Select)
 	allDate := make(map[string]*widget.DateEntry)
@@ -98,6 +108,10 @@ func BuildForm(a fyne.App, formName string, sections []Section, onSubmit func(da
 						}
 					}
 				}
+				// prefill value
+				if val, ok := values[f.ID]; ok {
+					e.SetText(val)
+				}
 
 				errLbl := widget.NewLabel("")
 				errLbl.TextStyle = fyne.TextStyle{Italic: true}
@@ -105,61 +119,63 @@ func BuildForm(a fyne.App, formName string, sections []Section, onSubmit func(da
 				errorLabels[f.ID] = errLbl
 
 				content := container.NewVBox(widget.NewLabel(f.Label), e, errLbl)
-
 				overlay := canvas.NewRectangle(color.NRGBA{255, 0, 0, 40})
 				overlay.Hide()
 				overlayRects[f.ID] = overlay
-
 				field = container.NewStack(content, overlay)
 				allText[f.ID] = e
 
 			case "select":
 				s := widget.NewSelect(f.Options, func(string) {})
 				s.PlaceHolder = "Select..."
+				if val, ok := values[f.ID]; ok {
+					s.SetSelected(val)
+				}
 				errLbl := widget.NewLabel("")
 				errLbl.TextStyle = fyne.TextStyle{Italic: true}
 				errLbl.Hide()
 				errorLabels[f.ID] = errLbl
 				content := container.NewVBox(widget.NewLabel(f.Label), s, errLbl)
-
 				overlay := canvas.NewRectangle(color.NRGBA{255, 0, 0, 40})
 				overlay.Hide()
 				overlayRects[f.ID] = overlay
-
 				field = container.NewStack(content, overlay)
 				allSelect[f.ID] = s
 
 			case "date":
 				d := widget.NewDateEntry()
+				if val, ok := values[f.ID]; ok && val != "" {
+					if parsed, err := time.Parse("2006-01-02", val); err == nil {
+						d.SetDate(&parsed)
+					}
+				}
 				errLbl := widget.NewLabel("")
 				errLbl.TextStyle = fyne.TextStyle{Italic: true}
 				errLbl.Hide()
 				errorLabels[f.ID] = errLbl
 				content := container.NewVBox(widget.NewLabel(f.Label), d, errLbl)
-
 				overlay := canvas.NewRectangle(color.NRGBA{255, 0, 0, 40})
 				overlay.Hide()
 				overlayRects[f.ID] = overlay
-
 				field = container.NewStack(content, overlay)
 				allDate[f.ID] = d
 
 			case "boolean":
 				c := widget.NewCheck(f.Label, func(bool) {})
+				if val, ok := values[f.ID]; ok {
+					c.SetChecked(val == "true" || val == "1" || strings.EqualFold(val, "yes"))
+				}
 				errLbl := widget.NewLabel("")
 				errLbl.TextStyle = fyne.TextStyle{Italic: true}
 				errLbl.Hide()
 				errorLabels[f.ID] = errLbl
 				content := container.NewVBox(c, errLbl)
-
 				overlay := canvas.NewRectangle(color.NRGBA{255, 0, 0, 40})
 				overlay.Hide()
 				overlayRects[f.ID] = overlay
-
 				field = container.NewStack(content, overlay)
 				allBool[f.ID] = c
 			}
-
 			items = append(items, field)
 		}
 
@@ -184,8 +200,15 @@ func BuildForm(a fyne.App, formName string, sections []Section, onSubmit func(da
 		formContent = tabs
 	}
 
-	// helper to collect form values
-	collectData := func() map[string]string {
+	submit := widget.NewButton("Submit", func() {
+		for id, lbl := range errorLabels {
+			lbl.Hide()
+			if r, ok := overlayRects[id]; ok {
+				r.Hide()
+				canvas.Refresh(r)
+			}
+		}
+
 		data := map[string]string{}
 		for k, v := range allText {
 			data[k] = v.Text
@@ -201,45 +224,6 @@ func BuildForm(a fyne.App, formName string, sections []Section, onSubmit func(da
 		for k, v := range allBool {
 			data[k] = strconv.FormatBool(v.Checked)
 		}
-		return data
-	}
-
-	// --- Save Draft button ---
-	saveBtn := widget.NewButton("💾 Save Draft", func() {
-		data := collectData()
-
-		draft := map[string]any{
-			"form": formName,
-			"data": data,
-			"meta": map[string]any{
-				"saved_at": time.Now().UTC().Format(time.RFC3339),
-				"source":   "manual",
-			},
-		}
-
-		if err := SaveTaggedDraft(a, formName, draft); err != nil {
-			dialog.ShowError(fmt.Errorf("Failed to save draft: %v", err), a.Driver().AllWindows()[0])
-			return
-		}
-
-		fyne.CurrentApp().SendNotification(&fyne.Notification{
-			Title:   "Draft Saved",
-			Content: fmt.Sprintf("‘%s’ stored locally for later upload.", formName),
-		})
-	})
-
-	// --- Submit button ---
-	submit := widget.NewButton("Submit", func() {
-		// clear previous errors
-		for id, lbl := range errorLabels {
-			lbl.Hide()
-			if r, ok := overlayRects[id]; ok {
-				r.Hide()
-				canvas.Refresh(r)
-			}
-		}
-
-		data := collectData()
 
 		var allFields []Field
 		for _, sec := range sections {
@@ -285,19 +269,55 @@ func BuildForm(a fyne.App, formName string, sections []Section, onSubmit func(da
 		}()
 	})
 
-	// --- Footer buttons ---
-	buttons := container.NewHBox(layout.NewSpacer(), saveBtn, submit, layout.NewSpacer())
+	saveBtn := widget.NewButton("💾 Save Draft", func() {
+		payload := map[string]any{
+			"form":      formName,
+			"data":      collectData(allText, allSelect, allDate, allBool),
+			"timestamp": time.Now().Format(time.RFC3339),
+		}
+		if err := SaveTaggedDraft(a, formName, payload); err != nil {
+			dialog.ShowError(fmt.Errorf("Failed to save draft: %v", err), a.Driver().AllWindows()[0])
+		} else {
+			dialog.ShowInformation("💾 Saved", "Draft saved locally for later submission.", a.Driver().AllWindows()[0])
+		}
+	})
+
+	buttons := container.NewGridWithColumns(2, submit, saveBtn)
 
 	return container.NewBorder(
 		nil,
 		container.NewVBox(buttons),
-		nil,
-		nil,
+		nil, nil,
 		container.NewVBox(
 			widget.NewLabelWithStyle(formName+" Form", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
 			formContent,
 		),
 	)
+}
+
+// collectData consolidates form values.
+func collectData(
+	allText map[string]*widget.Entry,
+	allSelect map[string]*widget.Select,
+	allDate map[string]*widget.DateEntry,
+	allBool map[string]*widget.Check,
+) map[string]string {
+	data := map[string]string{}
+	for k, v := range allText {
+		data[k] = v.Text
+	}
+	for k, v := range allSelect {
+		data[k] = v.Selected
+	}
+	for k, v := range allDate {
+		if v.Date != nil {
+			data[k] = v.Date.Format("2006-01-02")
+		}
+	}
+	for k, v := range allBool {
+		data[k] = strconv.FormatBool(v.Checked)
+	}
+	return data
 }
 
 // validateForm applies validation rules to all field types.

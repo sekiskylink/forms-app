@@ -1,10 +1,5 @@
 package forms
 
-import (
-	"encoding/json"
-	"os"
-)
-
 type Validation struct {
 	Required         bool    `json:"required"`
 	MinLength        int     `json:"minLength"`
@@ -39,19 +34,19 @@ type Section struct {
 	Fields  []Field `json:"fields"`
 }
 
-type FormBundle struct {
-	Version     string               `json:"version"`
-	LastUpdated string               `json:"lastUpdated,omitempty"`
-	Forms       map[string][]Section `json:"forms"`
+type FormDefinition struct {
+	Meta     FormMeta  `json:"meta"`
+	Sections []Section `json:"sections"`
 }
 
-// Each form now maps to a list of sections
-func LoadForms2(path string) (map[string][]Section, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var result map[string][]Section
-	err = json.Unmarshal(b, &result)
-	return result, err
+type FormMeta struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Icon        string `json:"icon"`
+}
+
+type FormBundle struct {
+	Version     string                    `json:"version"`
+	LastUpdated string                    `json:"lastUpdated,omitempty"`
+	Forms       map[string]FormDefinition `json:"forms"`
 }

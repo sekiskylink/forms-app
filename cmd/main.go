@@ -86,7 +86,7 @@ func main() {
 		source = "embedded"
 		if err != nil {
 			dialog.ShowError(fmt.Errorf("Failed to load any form definitions: %v", err), w)
-			allForms = map[string][]forms.Section{}
+			allForms = map[string]forms.FormDefinition{}
 			source = "error"
 		} else {
 			fmt.Println("✅ Loaded embedded forms.json")
@@ -123,7 +123,7 @@ func main() {
 		banner := statusBanner(source, w)
 		content := ui.DashboardScreen(a, allForms, banner, func(name string) {
 			formFields := allForms[name]
-			formContent := forms.BuildForm(a, name, formFields, func(data map[string]string) {
+			formContent := forms.BuildForm(a, name, formFields.Sections, func(data map[string]string) {
 				log.Println("Submitted", name, data)
 				nav.PopSlide()
 			})

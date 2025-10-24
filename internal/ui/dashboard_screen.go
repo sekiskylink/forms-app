@@ -1,42 +1,104 @@
 package ui
 
 import (
+	"bytes"
 	"fmt"
+	"strings"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/storage"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"forms-app/internal/forms"
 )
 
 // DashboardScreen lists available forms and adds an offline drafts uploader.
-func DashboardScreen(a fyne.App, formDefs map[string][]forms.Section, banner fyne.CanvasObject, openForm func(name string)) fyne.CanvasObject {
-	formNames := make([]string, 0, len(formDefs))
-	for name := range formDefs {
-		formNames = append(formNames, name)
+func DashboardScreen(
+	a fyne.App,
+	formDefs map[string]forms.FormDefinition,
+	banner fyne.CanvasObject,
+	openForm func(name string),
+) fyne.CanvasObject {
+
+	// --- Build form cards ---
+	var cards []fyne.CanvasObject
+	for code, def := range formDefs {
+		meta := def.Meta
+
+		// Load icon
+		var icon *canvas.Image
+		if meta.Icon != "" {
+			// Simple heuristic: URL vs local file
+			if strings.HasPrefix(meta.Icon, "http://") || strings.HasPrefix(meta.Icon, "https://") {
+				if uri, err := storage.ParseURI(meta.Icon); err == nil {
+					icon = canvas.NewImageFromURI(uri)
+				}
+			} else {
+				// Local/packaged file path
+				// icon = canvas.NewImageFromFile(meta.Icon)
+				switch meta.Icon {
+				case "tb.png":
+					icon = canvas.NewImageFromReader(bytes.NewReader(forms.IconTB), "tb")
+				case "death.png":
+					icon = canvas.NewImageFromReader(bytes.NewReader(forms.IconDeath), "death")
+				case "cases.png":
+					icon = canvas.NewImageFromReader(bytes.NewReader(forms.IconCases), "cases")
+				default:
+					res := fyne.CurrentApp().Settings().Theme().Icon(theme.IconNameFile)
+					icon = canvas.NewImageFromResource(res)
+				}
+			}
+		}
+
+		if icon == nil {
+			// ✅ Fyne v2.6.3-compatible themed fallback icon (single arg)
+			res := a.Settings().Theme().Icon(theme.IconNameFile)
+			icon = canvas.NewImageFromResource(res)
+		}
+
+		// consistent sizing
+		icon.SetMinSize(fyne.NewSize(40, 40))
+		icon.FillMode = canvas.ImageFillContain
+
+		// Title + description (theme-friendly)
+		title := widget.NewLabelWithStyle(meta.Name, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+		desc := widget.NewLabelWithStyle(meta.Description, fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
+		desc.Wrapping = fyne.TextWrapWord
+
+		textBox := container.NewVBox(title, desc)
+		cardBody := container.NewBorder(nil, nil, icon, nil, textBox)
+
+		// Clickable overlay
+		btn := widget.NewButton("", func() { openForm(code) })
+		btn.Importance = widget.LowImportance
+
+		//card := container.NewStack(
+		//	canvas.NewRectangle(color.NRGBA{245, 245, 245, 255}),
+		//	container.NewPadded(cardBody),
+		//	btn,
+		//)
+		padded := container.NewPadded(cardBody)
+		card := NewHoverCard(padded, func() { openForm(code) })
+		cards = append(cards, card)
 	}
 
-	var buttons []fyne.CanvasObject
-	for _, name := range formNames {
-		n := name
-		btn := widget.NewButton("📝 "+n, func() { openForm(n) })
-		buttons = append(buttons, btn)
+	if len(cards) == 0 {
+		cards = append(cards, widget.NewLabel("⚠️ No forms available."))
 	}
 
-	if len(buttons) == 0 {
-		buttons = append(buttons, widget.NewLabel("⚠️ No forms available."))
-	}
+	// Scrollable list
+	scroll := container.NewVScroll(container.NewVBox(cards...))
+	scroll.SetMinSize(fyne.NewSize(360, 480))
 
-	scroll := container.NewVScroll(container.NewVBox(buttons...))
-	scroll.SetMinSize(fyne.NewSize(300, 400))
-
-	apiURL := "https://example.com/api/forms/submit" // your real endpoint
+	// --- Drafts ---
+	apiURL := "https://example.com/api/forms/submit"
 	drafts, _ := forms.LoadDrafts(a)
 
-	// 🗂 Draft button (only if drafts exist)
 	var draftBtn fyne.CanvasObject
 	if len(drafts) > 0 {
 		count := len(drafts)
@@ -51,7 +113,28 @@ func DashboardScreen(a fyne.App, formDefs map[string][]forms.Section, banner fyn
 		draftBtn = widget.NewLabel("No pending drafts")
 	}
 
-	// 🌐 Auto-Sync toggle
+	// --- Theme toggle ---
+	dark := a.Preferences().BoolWithFallback("darkMode", false)
+	var themeBtn *widget.Button
+	themeBtn = widget.NewButton("", func() {
+		dark = !dark
+		a.Preferences().SetBool("darkMode", dark)
+		SetDark(a, dark)
+		if dark {
+			themeBtn.SetText("🌙 Dark")
+		} else {
+			themeBtn.SetText("🌞 Light")
+		}
+	})
+
+	SetDark(a, dark)
+	if dark {
+		themeBtn.SetText("🌙 Dark")
+	} else {
+		themeBtn.SetText("🌞 Light")
+	}
+
+	// --- Auto sync + manual sync ---
 	autoSwitch := widget.NewCheck("Auto Sync", func(on bool) {
 		a.Preferences().SetBool("autoSyncEnabled", on)
 		status := "disabled"
@@ -62,7 +145,6 @@ func DashboardScreen(a fyne.App, formDefs map[string][]forms.Section, banner fyn
 	})
 	autoSwitch.SetChecked(a.Preferences().BoolWithFallback("autoSyncEnabled", true))
 
-	// ⚙️ Manual “Sync Now” button (only visible when auto-sync is off)
 	syncNowBtn := widget.NewButton("🔄 Sync Now", func() {
 		go func() {
 			fyne.Do(func() {
@@ -88,13 +170,16 @@ func DashboardScreen(a fyne.App, formDefs map[string][]forms.Section, banner fyn
 		}
 	}
 
+	// --- Header ---
 	header := container.NewHBox(
 		widget.NewLabelWithStyle("Available Forms", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		layout.NewSpacer(),
+		themeBtn,
 		autoSwitch,
 		syncNowBtn,
 	)
 
+	// --- Main content ---
 	mainContent := container.NewVBox(
 		header,
 		draftBtn,
@@ -110,7 +195,9 @@ func DashboardScreen(a fyne.App, formDefs map[string][]forms.Section, banner fyn
 	}
 
 	return mainContent
-} // plural adds "s" for plural count
+}
+
+// plural adds "s" for plural count
 func plural(n int) string {
 	if n == 1 {
 		return ""

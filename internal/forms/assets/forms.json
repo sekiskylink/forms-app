@@ -1,119 +1,186 @@
 {
-  "version": "2025.10.17",
-  "lastUpdated": "2025-10-17T12:00:00Z",
+  "version": "2025.10.23",
   "forms": {
-    "CASES": [
-      {
-        "title": "Patient Information",
-        "layout": "grid",
-        "columns": 2,
-        "fields": [
-          {
-            "id": "patient_name",
-            "label": "Patient Name",
-            "type": "text",
-            "validation": { "required": true, "minLength": 3, "maxLength": 50 }
-          },
-          {
-            "id": "age",
-            "label": "Age",
-            "type": "number",
-            "validation": { "required": true, "min": 0, "max": 120 }
-          },
-          {
-            "id": "sex",
-            "label": "Sex",
-            "type": "select",
-            "options": ["Male", "Female"],
-            "validation": { "required": true }
-          },
-          {
-            "id": "date_onset",
-            "label": "Date of Onset",
-            "type": "date",
-            "validation": { "required": true, "maxDate": "2025-12-31" }
-          },
-          {
-            "id": "date_reported",
-            "label": "Date Reported",
-            "type": "date",
-            "validation": { "required": true, "afterField": "date_onset" }
-          },
-          {
-            "id": "symptoms",
-            "label": "Symptoms",
-            "type": "multiline",
-            "validation": { "maxLength": 200 }
-          }
-        ]
-      }
-    ],
+    "CASES": {
+      "meta": {
+        "name": "Cases Form",
+        "description": "Weekly reporting of suspected and confirmed disease cases.",
+        "icon": "cases.png"
+      },
+      "sections": [
+        {
+          "title": "General Information",
+          "layout": "grid",
+          "columns": 2,
+          "fields": [
+            {
+              "id": "facility_name",
+              "label": "Health Facility Name",
+              "type": "text",
+              "validation": { "required": true, "maxLength": 100 }
+            },
+            {
+              "id": "district",
+              "label": "District",
+              "type": "text",
+              "validation": { "required": true }
+            },
+            {
+              "id": "date",
+              "label": "Date of Report",
+              "type": "date",
+              "validation": { "required": true }
+            }
+          ]
+        },
+        {
+          "title": "Case Details",
+          "layout": "grid",
+          "columns": 2,
+          "fields": [
+            {
+              "id": "measles_cases",
+              "label": "Number of Measles Cases",
+              "type": "number",
+              "validation": { "required": true, "min": 0 }
+            },
+            {
+              "id": "cholera_cases",
+              "label": "Number of Cholera Cases",
+              "type": "number",
+              "validation": { "required": true, "min": 0 }
+            },
+            {
+              "id": "other_disease",
+              "label": "Other Disease (Specify)",
+              "type": "text",
+              "validation": { "required": false, "maxLength": 50 }
+            }
+          ]
+        }
+      ]
+    },
 
-    "DEATH": [
-      {
-        "title": "Death Record",
-        "layout": "grid",
-        "columns": 2,
-        "fields": [
-          {
-            "id": "deceased_name",
-            "label": "Deceased Name",
-            "type": "text",
-            "validation": { "required": true }
-          },
-          {
-            "id": "age_at_death",
-            "label": "Age at Death",
-            "type": "number",
-            "validation": { "min": 0, "max": 120 }
-          },
-          {
-            "id": "cause_of_death",
-            "label": "Cause of Death",
-            "type": "text",
-            "validation": { "required": true }
-          },
-          {
-            "id": "date_of_death",
-            "label": "Date of Death",
-            "type": "date",
-            "validation": { "required": true }
-          }
-        ]
-      }
-    ],
+    "DEATH": {
+      "meta": {
+        "name": "Death Form",
+        "description": "Weekly reporting of deaths by cause and age group.",
+        "icon": "death.png"
+      },
+      "sections": [
+        {
+          "title": "Mortality Summary",
+          "layout": "grid",
+          "columns": 2,
+          "fields": [
+            {
+              "id": "district",
+              "label": "District",
+              "type": "text",
+              "validation": { "required": true }
+            },
+            {
+              "id": "week_start",
+              "label": "Week Start Date",
+              "type": "date",
+              "validation": { "required": true }
+            },
+            {
+              "id": "total_deaths",
+              "label": "Total Deaths",
+              "type": "number",
+              "validation": { "required": true, "min": 0 }
+            }
+          ]
+        },
+        {
+          "title": "Deaths by Age Group",
+          "layout": "grid",
+          "columns": 3,
+          "fields": [
+            {
+              "id": "deaths_under5",
+              "label": "Under 5",
+              "type": "number",
+              "validation": { "min": 0 }
+            },
+            {
+              "id": "deaths_5to14",
+              "label": "Ages 5–14",
+              "type": "number",
+              "validation": { "min": 0 }
+            },
+            {
+              "id": "deaths_15plus",
+              "label": "Ages 15+",
+              "type": "number",
+              "validation": { "min": 0 }
+            }
+          ]
+        }
+      ]
+    },
 
-    "EPC": [
-      {
-        "title": "Environmental Sample Collection",
-        "layout": "grid",
-        "columns": 2,
-        "fields": [
-          {
-            "id": "sample_id",
-            "label": "Sample ID",
-            "type": "text",
-            "validation": { "required": true }
-          },
-          {
-            "id": "collection_site",
-            "label": "Collection Site",
-            "type": "text",
-            "validation": { "required": true }
-          },
-          {
-            "id": "collection_date",
-            "label": "Collection Date",
-            "type": "date",
-            "validation": { "required": true }
-          },
-          {
-            "id": "collector_name",
-            "label": "Collector Name",
-            "type": "text"
-          }
-        ]
-      }
-    ]
+    "TB": {
+      "meta": {
+        "name": "Tuberculosis Form",
+        "description": "Quarterly TB case management and follow-up reporting.",
+        "icon": "tb.png"
+      },
+      "sections": [
+        {
+          "title": "Patient Information",
+          "layout": "grid",
+          "columns": 2,
+          "fields": [
+            {
+              "id": "patient_id",
+              "label": "Patient ID",
+              "type": "text",
+              "validation": { "required": true }
+            },
+            {
+              "id": "sex",
+              "label": "Sex",
+              "type": "select",
+              "options": ["Male", "Female"],
+              "validation": { "required": true }
+            },
+            {
+              "id": "age",
+              "label": "Age",
+              "type": "number",
+              "validation": { "required": true, "min": 0, "max": 120 }
+            }
+          ]
+        },
+        {
+          "title": "Treatment Follow-up",
+          "layout": "grid",
+          "columns": 2,
+          "fields": [
+            {
+              "id": "start_date",
+              "label": "Treatment Start Date",
+              "type": "date",
+              "validation": { "required": true }
+            },
+            {
+              "id": "end_date",
+              "label": "Treatment End Date",
+              "type": "date",
+              "validation": { "afterField": "start_date" }
+            },
+            {
+              "id": "treatment_outcome",
+              "label": "Treatment Outcome",
+              "type": "select",
+              "options": ["Cured", "Completed", "Died", "Lost to follow-up", "Ongoing"],
+              "validation": { "required": true }
+            }
+          ]
+        }
+      ]
+    }
   }
 }

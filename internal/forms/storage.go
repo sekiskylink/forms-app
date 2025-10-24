@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,7 +12,7 @@ import (
 	"fyne.io/fyne/v2"
 )
 
-func LoadForms(a fyne.App, apiURL, appName string) (map[string][]Section, string, error) {
+func LoadForms(a fyne.App, apiURL, appName string) (map[string]FormDefinition, string, error) {
 	cache, _ := loadBundleFromCache(a, appName)
 
 	// Try API first
@@ -76,7 +75,7 @@ func saveBundleToCache(a fyne.App, appName string, bundle FormBundle) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
-	return ioutil.WriteFile(path, b, 0644)
+	return os.WriteFile(path, b, 0644)
 }
 
 func loadBundleFromCache(a fyne.App, appName string) (FormBundle, error) {
@@ -84,7 +83,7 @@ func loadBundleFromCache(a fyne.App, appName string) (FormBundle, error) {
 	if err != nil {
 		return FormBundle{}, err
 	}
-	b, err := ioutil.ReadFile(path)
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return FormBundle{}, err
 	}
